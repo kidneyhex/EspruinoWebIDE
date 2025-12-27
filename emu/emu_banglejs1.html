@@ -82,6 +82,8 @@
   #gfxcanvas {
     image-rendering: pixelated;
     border: 5px solid #fff;
+    /* Ensure touch gestures or presses don't cause page pan/zoom */
+    touch-action: none;
   }
   </style>
 </head>
@@ -120,6 +122,16 @@ function jsInitButtons() {
   function handleButton(n, pin) {
     hwPinValue[pin]=1; // inverted
     var btn = document.getElementById("BTN"+n);
+    // Pointer events (covers touch + mouse)
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      hwPinValue[pin]=0; // inverted
+      jsTransmitPinEvent(pin);
+    });
+    btn.addEventListener('pointerup', e => {
+      hwPinValue[pin]=1; // inverted
+      jsTransmitPinEvent(pin);
+    });
     btn.addEventListener('mousedown', e => {
       e.preventDefault();
       hwPinValue[pin]=0; // inverted

@@ -70,6 +70,8 @@
   #gfxcanvas {
     image-rendering: pixelated;
     border: 5px solid #fff;
+    /* Ensure touch gestures go to the emulator, not page panning */
+    touch-action: none;
   }
   </style>
 </head>
@@ -112,6 +114,16 @@ function jsInitButtons() {
   function handleButton(n, pin) {
     hwPinValue[pin]=1; // inverted
     var btn = document.getElementById("BTN"+n);
+    // Pointer events (touch + mouse)
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      hwPinValue[pin]=0; // inverted
+      jsTransmitPinEvent(pin);
+    });
+    btn.addEventListener('pointerup', e => {
+      hwPinValue[pin]=1; // inverted
+      jsTransmitPinEvent(pin);
+    });
     btn.addEventListener('mousedown', e => {
       e.preventDefault();
       hwPinValue[pin]=0; // inverted
@@ -142,6 +154,66 @@ function jsInitButtons() {
 
 
   div = document.getElementById("gfxcanvas");
+  div.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    // keep capturing the pointer until up/cancel
+    if (div.setPointerCapture) try { div.setPointerCapture(e.pointerId); } catch(_){}
+    const rect = div.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (div.width / rect.width));
+    const y = Math.floor((e.clientY - rect.top) * (div.height / rect.height));
+    touchX = x;
+    touchY = y;
+    touchPts = 1;
+    touchDX = 0; touchDY = 0; touchAX = 0; touchAY = 0;
+    jsSendTouchEvent(touchX, touchY, touchPts, 0);
+  });
+  div.addEventListener('pointermove', e => {
+    e.preventDefault();
+    const rect = div.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (div.width / rect.width));
+    const y = Math.floor((e.clientY - rect.top) * (div.height / rect.height));
+    const dx = x - touchX;
+    const dy = y - touchY;
+    const pts = (e.buttons ? 1 : (e.pressure && e.pressure>0 ? 1 : 0));
+    if (pts) {
+      touchDX += dx;
+      touchDY += dy;
+      touchAX += Math.abs(dx);
+      touchAY += Math.abs(dy);
+    }
+    touchX = x;
+    touchY = y;
+    if (pts || (touchPts != pts))
+      jsSendTouchEvent(touchX, touchY, pts, 0);
+    touchPts = pts;
+  });
+  function finishPointer(e) {
+    e.preventDefault();
+    const rect = div.getBoundingClientRect();
+    let x = Math.floor((e.clientX - rect.left) * (div.width / rect.width));
+    let y = Math.floor((e.clientY - rect.top) * (div.height / rect.height));
+    if (x<0) x=0;
+    if (y<0) y=0;
+    if (x>=GFX_WIDTH) x=GFX_WIDTH-1;
+    if (y>=GFX_HEIGHT) y=GFX_HEIGHT-1;
+    touchX = x; touchY = y;
+    if (touchPts) {
+      jsSendTouchEvent(touchX, touchY, 0, 0);
+      if (touchAX<5 && touchAY<5) // single click
+        jsSendTouchEvent(touchX, touchY, 0, 5);
+      if (touchAX>80 && touchAY<20)
+        jsSendTouchEvent(touchX, touchY, 0, (touchDX<0) ? 3 : 4); // slide left/right
+      if (touchAX<20 && touchAY>80)
+        jsSendTouchEvent(touchX, touchY, 0, (touchDY<0) ? 2 : 1); // slide up/down
+    }
+    touchDX = 0;
+    touchDY = 0;
+    touchAX = 0;
+    touchAY = 0;
+    touchPts = 0;
+  }
+  div.addEventListener('pointerup', finishPointer);
+  div.addEventListener('pointercancel', finishPointer);
   div.addEventListener('mousemove', e => {
     e.preventDefault();
 
@@ -167,25 +239,19 @@ function jsInitButtons() {
     touchX = e.offsetX;
     touchY = e.offsetY;
     touchPts = 1;
+    touchDX = 0; touchDY = 0; touchAX = 0; touchAY = 0;
     jsSendTouchEvent(touchX, touchY, touchPts, 0);
   });
   div.addEventListener('mouseup', e => {
     e.preventDefault();
-    touchX = e.offsetX;
-    touchY = e.offsetY;
-    if (touchX<0) touchX=0;
-    if (touchY<0) touchY=0;
-    if (touchX>=GFX_WIDTH) touchX=GFX_WIDTH-1;
-    if (touchY>=GFX_HEIGHT) touchY=GFX_HEIGHT-1;
+    var x = e.offsetX;
+    var y = e.offsetY;
+    if (x<0) x=0;
+    if (y<0) y=0;
+    if (x>=GFX_WIDTH) x=GFX_WIDTH-1;
+    if (y>=GFX_HEIGHT) y=GFX_HEIGHT-1;
+    touchX = x; touchY = y;
     if (touchPts) {
-      console.log("Touch up", {
-        x : touchX,
-        y : touchY,
-        dx : touchDX,
-        dy : touchDY,
-        ax : touchAX,
-        ay : touchAY
-      });
       jsSendTouchEvent(touchX, touchY, 0, 0);
       if (touchAX<5 && touchAY<5) // single click
         jsSendTouchEvent(touchX, touchY, 0, 5);
